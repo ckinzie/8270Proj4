@@ -34,7 +34,8 @@
 %type<fltNumber> FLTNUMBER
 %type<node> atom arith_expr test factor and_test opt_test term lambdef not_test and_expr
 %type<node> power or_test expr comparison xor_expr shift_expr star_EQUAL expr_stmt testlist
-%type<node> pick_yield_expr_testlist
+%type<node> testlist_comp opt_yield_test pick_yield_expr_testlist pick_yield_expr_testlist_comp 
+%type<node> yield_expr YIELD
 %type<id> NAME
 
 %start start
@@ -142,6 +143,13 @@ small_stmt // Used in: simple_stmt, star_SEMI_small_stmt
 expr_stmt // Used in: small_stmt
 	: testlist augassign pick_yield_expr_testlist
 	| testlist star_EQUAL
+	  {
+	    if ($2!=0)
+	    {
+	      $$ = new AsgBinaryNode($1,$2);
+	      pool.add($$);
+	    }
+	  }
 	;
 pick_yield_expr_testlist // Used in: expr_stmt, star_EQUAL
 	: yield_expr {$$ = nullptr;}
@@ -150,27 +158,32 @@ pick_yield_expr_testlist // Used in: expr_stmt, star_EQUAL
 star_EQUAL // Used in: expr_stmt, star_EQUAL
 	: star_EQUAL EQUAL pick_yield_expr_testlist
 	  {
-	    $$ = new AsgBinaryNode($1,$3);
-	    pool.add($$); 
+	    if ($1 == 0)
+	      $$ = $3;
+	    else if ($3 !=0)
+	    {
+	      $$ = new AsgBinaryNode($1,$3);
+	      pool.add($$);
+	    }
 	  }
 	| %empty {$$ = 0;}
 	;
 augassign // Used in: expr_stmt
-	: PLUSEQUAL
-	| MINEQUAL
-	| STAREQUAL
-	| SLASHEQUAL
-	| PERCENTEQUAL
-	| AMPEREQUAL
-	| VBAREQUAL
-	| CIRCUMFLEXEQUAL
-	| LEFTSHIFTEQUAL
-	| RIGHTSHIFTEQUAL
-	| DOUBLESTAREQUAL
-	| DOUBLESLASHEQUAL
+	: PLUSEQUAL {$$ = PLUSEQUAL;}
+	| MINEQUAL {$$ = MINEQUAL;}
+	| STAREQUAL {$$ = STAREQUAL;}
+	| SLASHEQUAL {$$ = SLASHEQUAL;}
+	| PERCENTEQUAL {$$ = PERCENTEQUAL;}
+	| AMPEREQUAL {$$ = AMPEREQUAL;}
+	| VBAREQUAL {$$ = VBAREQUAL;}
+	| CIRCUMFLEXEQUAL {$$ = CIRCUMFLEXEQUAL;}
+	| LEFTSHIFTEQUAL {$$ = LEFTSHIFTEQUAL;}
+	| RIGHTSHIFTEQUAL {$$ = RIGHTSHIFTEQUAL;}
+	| DOUBLESTAREQUAL {$$ = DOUBLESTAREQUAL;}
+	| DOUBLESLASHEQUAL {$$ = DOUBLESLASHEQUAL;}
 	;
 print_stmt // Used in: small_stmt
-	: PRINT opt_test
+	: PRINT opt_test {$2->eval()->print();}
 	| PRINT RIGHTSHIFT test opt_test_2
 	;
 star_COMMA_test // Used in: star_COMMA_test, opt_test, listmaker, testlist_comp, testlist, pick_for_test
@@ -461,14 +474,18 @@ term // Used in: arith_expr, term
 	      $$ = new DivBinaryNode($1, $3); 
         pool.add($$);
       }
-      /*else if ($2 == PERCENT) {
-	      $$ = new DivBinaryNode($1, $3); 
-        pool.add($$);
+      else if ($2 == PERCENT) { ///////////Fix memory leaks here
+        float v1 = atof($1->eval()->getVal());
+        float v2 = atof($3->eval()->getVal());
+        int div = v1/v2;
+        float extra = v1-(div*v2);
+        $$ = new AddBinaryNode(new FloatLiteral(extra), new IntLiteral(0));
+	      pool.add($$);
       }
       else if ($2 == DOUBLESLASH) {
-	      $$ = new DivBinaryNode($1, $3); 
+	      $$ = new IntDivBinaryNode($1, $3); 
         pool.add($$);
-      }*/
+      }
 	  }
 	;
 pick_multop // Used in: term
@@ -480,7 +497,7 @@ pick_multop // Used in: term
 factor // Used in: term, factor, power
 	: pick_unop factor
 	  {
-	    if ($1 == MINUS)
+	    if ($1 == MINUS) ///////////Fix memory leaks here
 	    {
 	      $$ = new SubBinaryNode(new IntLiteral(0), $2);
 	      pool.add($$);
@@ -517,7 +534,7 @@ star_trailer // Used in: power, star_trailer
 	| %empty
 	;
 atom // Used in: power
-	: LPAR opt_yield_test RPAR {$$ = nullptr;}
+	: LPAR opt_yield_test RPAR {$$ = $2;}
 	| LSQB opt_listmaker RSQB {$$ = nullptr;}
 	| LBRACE opt_dictorsetmaker RBRACE {$$ = nullptr;}
 	| BACKQUOTE testlist1 BACKQUOTE {$$ = nullptr;}
@@ -544,8 +561,8 @@ pick_yield_expr_testlist_comp // Used in: opt_yield_test
 	| testlist_comp
 	;
 opt_yield_test // Used in: atom
-	: pick_yield_expr_testlist_comp
-	| %empty
+	: pick_yield_expr_testlist_comp 
+	| %empty {$$ = nullptr;}
 	;
 opt_listmaker // Used in: atom
 	: listmaker
